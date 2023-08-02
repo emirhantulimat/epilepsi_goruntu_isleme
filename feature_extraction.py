@@ -20,29 +20,33 @@ from skimage.feature import local_binary_pattern
 from skimage.feature import hog
 from skimage.feature import canny
 
-
+#NIfTI görüntülerini JPEG dilimlerine dönüştürmek için fonksiyon
 def nifti_to_jpg(nifti_path, slice_axis=0):
+    """
+        Verilen NIfTI formatındaki görüntüyü belirtilen eksen (varsayılan olarak 0) boyunca
+    dilimlere böler ve her dilimi JPEG formatında kaydediyor.
+    
+     Dilimleme için kullanılacak eksenin (slice_axis) 0 olarak belirlendi
+    """
     max = 0
     index = 0
 
-    # Load NIfTI image
+    # NIfTI görüntüyü yükleniyor
     img = sitk.ReadImage(nifti_path)
     
-    # Convert to numpy array
+    # Görüntüyü numpy dizisine dönüştürüyor
     img_array = sitk.GetArrayFromImage(img)
     
-    # # Determine which axis to use for slices
-    # slice_axis = min(max(slice_axis, 0), 2)
-    
-    # Normalize the intensity values to range [0, 1] for better visualization
+
+    # Görüntü yoğunluk değerlerinin [0, 1] aralığına normalize ediliyor
     img_array = img_array.astype(np.float32)
     img_array = (img_array - np.min(img_array)) / (np.max(img_array) - np.min(img_array))
     
-    # Determine the slice number to save
+    # Dilimlenecek toplam dilim sayısının belirleniyor
     num_slices = img_array.shape[slice_axis]
         
     for slice_number in range(num_slices):
-        # Extract a single 2D slice
+        # 2B dilimlerin elde edilmesi
         if slice_axis == 0:
             slice_2d = img_array[slice_number, :, :]
         elif slice_axis == 1:
@@ -50,27 +54,32 @@ def nifti_to_jpg(nifti_path, slice_axis=0):
         else:
             slice_2d = img_array[:, :, slice_number]
         
-        # Resize the slice to the desired output size
+        # Dilimi çıktı boyutuna yeniden boyutlandırma
         slice_2d = cv2.cvtColor(slice_2d, cv2.COLOR_BGR2RGB)
 
-        # Save the slice as a JPEG image
+        # Dilimi JPEG olarak kaydetme
         slice_2d = (slice_2d * 255).astype(np.uint8)
 
         image = slice_2d.copy()
 
+        # Dilimi ikili görüntüye dönüştürme
         image[image > 10] = 255
         image[image <= 10] = 0
 
+        # Morfolojik işlem uygulama
         kernel = np.ones((5,5),np.uint8)
         eroded_mask = cv2.dilate(image,kernel,iterations = 1)
         eroded_area = np.sum(eroded_mask)
 
+        #alansal olarak en buyuk beyin goruntusunu aliyor
         if slice_number > 10 and eroded_area > max:
             max = eroded_area
             index = slice_number
 
 
     image_arr = []
+    #dongude, bulunan en buyuk 3 goruntunun 10 aralıkla array e kaydediliyor
+    #  
     for i in range(1,4):
         img = img_array[index + (i*10), :, :]
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -82,14 +91,13 @@ def nifti_to_jpg(nifti_path, slice_axis=0):
         image_gray = cv2.cvtColor(image1_copy,cv2.COLOR_BGR2GRAY)
         image_gray[image_gray > 10] = 255
         image_gray[image_gray <= 10] = 0
-        # Find all contours in the image.
+        # goruntuyu kirpmak icin en buyuk contour bulunuyor
         contours, hierarchy = cv2.findContours(image_gray, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
         sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)
-        # Get the bounding rectangle
+        #  bounding rectangle cizililiyor 
         x, y, w, h = cv2.boundingRect(sorted_contours[0])
         image_arr[i] = image1_copy[y:y+h,x:x+w]
         plt.subplot(1,3,i+1)
-        # plt.title(largest_three_ero[i*10])
         plt.imshow(image_arr[i]);plt.axis("off")
         plt.title(nifti_path[40:-1])
         plt.show()
@@ -105,9 +113,10 @@ def nifti_to_jpg(nifti_path, slice_axis=0):
         plt.imshow(img[0:y,x:int(img.shape[1])])
         plt.show()
 
-
+    # 6 ROI bolgesi seciliyor ve bir arrayle donduruluyor
     return image_arr_RL
 
+# Görüntüleri kırpma işlemi için fonksiyon
 def crop(image_arr):
     arr = [[[], []] for _ in range(3)]
     for i in range(3):
@@ -123,12 +132,14 @@ def crop(image_arr):
 
     return arr
 
+# Canny kenar tespiti uygulamak için fonksiyon
 def canny1(image):
     gaussian_image = cv2.GaussianBlur(image, (3, 3), 0)
     canny_image = cv2.Canny(gaussian_image, 30 ,60)
 
     return np.sum(canny_image == 255)/(canny_image.shape[0]*canny_image.shape[1])
 
+# En yoğun piksellerin sayısını bulmak için fonksiyon
 def number_of_densest_pixels(image):
     histogram = cv2.calcHist([image], [0], None, [256], [0, 256])
     index = np.argmax(histogram)
@@ -136,6 +147,7 @@ def number_of_densest_pixels(image):
 
     return index,value
 
+# Kenarların yönünü belirlemek için fonksiyon
 def direction_of_edges(image):
 
     gray_img_array = image[:, :, 0]
@@ -158,6 +170,7 @@ def direction_of_edges(image):
                 #dikey
         return 1
 
+# Gabor filtresi uygulamak için fonksiyon
 def gabor(image):
     # Gabor filtreleri oluşturma
     ksize = 27  # Filtre boyutu
@@ -173,11 +186,13 @@ def gabor(image):
 
     return np.mean(filtered_image)
 
+# Piksel ortalama değerini hesaplamak için fonksiyon
 def pixel_mean(image):
     
 
     return np.sum(image)/(image.shape[0]*image.shape[1]*255)
 
+# GLCM özelliklerini çıkarmak için fonksiyon
 def GLCM_feature(image):
     gray_img_array = image[:, :, 0]
 
@@ -188,8 +203,7 @@ def GLCM_feature(image):
     return haralick_features
 
 
-
-    return haralick_features
+# Lokal Binari Desen (LBP) özelliğini hesaplamak için fonksiyon
 
 def LBP(image):
     gray_img_array = image[:, :, 0]
@@ -205,6 +219,7 @@ def LBP(image):
     lbp = hist[8]
     return lbp
 
+# Merkezi bölgede Canny kenar yoğunluğunu hesaplamak için fonksiyon
 def center_ROI_canny(image):
     # sadece 3'u fotograf icin
     gray_img_array = image[:, :, 0]
@@ -216,6 +231,7 @@ def center_ROI_canny(image):
     canny_img = canny(gasussian_img[y_shape-10:y_shape+30, x_shape-40:x_shape+40], sigma = 1)
     return np.mean(canny_img)
 
+# Histograma yönlü gradyan (HOG) özelliğini hesaplamak için fonksiyon
 def HOG(image):
     gray_img_array = image[:, :, 0]
 
@@ -229,10 +245,10 @@ def HOG(image):
 
             
 if __name__ == "__main__":
-    data_path = os.listdir(r'C:\Users\Amrtu\Desktop\Staj 2\dataset')
+    data_path = os.listdir(r'\dataset')
     features = []
     data = {}
-    with open(r'C:\Users\Amrtu\Desktop\Staj 2\features.txt', 'r') as file:
+    with open(r'features.txt', 'r') as file:
         for line in file:
             features.append(line.strip())
     for i in range(6):
@@ -240,9 +256,9 @@ if __name__ == "__main__":
             if feature != '':
                 data[f'{feature}{i}'] = []
 
-
+# Veri setini dolaşarak özellikleri çıkartın
     for index, path in enumerate(data_path):
-        image_arr = nifti_to_jpg(rf'C:\Users\Amrtu\Desktop\Staj 2\dataset\{path}')
+        image_arr = nifti_to_jpg(rf'dataset\{path}')
 
         for i, img in enumerate(image_arr):
             pixel_density_, pixel_density_value_ = number_of_densest_pixels(img)
@@ -277,5 +293,6 @@ if __name__ == "__main__":
             data[f'{features[13]}{i}'].append(canny_mean_)
             data[f'{features[14]}{i}'].append(HOG_)
 
+    # Veri çerçevesi oluşturun ve CSV dosyası olarak kaydedin
     df = pd.DataFrame(data)
     df.to_csv("features.csv")
