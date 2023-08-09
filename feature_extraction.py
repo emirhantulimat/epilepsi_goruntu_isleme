@@ -5,6 +5,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import pydicom
 from skimage.filters.rank import entropy
 from skimage.morphology import disk
 from scipy import ndimage as nd
@@ -20,8 +21,12 @@ from skimage.feature import local_binary_pattern
 from skimage.feature import hog
 from skimage.feature import canny
 
+count = 0
 #NIfTI görüntülerini JPEG dilimlerine dönüştürmek için fonksiyon
 def nifti_to_jpg(nifti_path, slice_axis=0):
+
+
+    global count
     """
         Verilen NIfTI formatındaki görüntüyü belirtilen eksen (varsayılan olarak 0) boyunca
     dilimlere böler ve her dilimi JPEG formatında kaydediyor.
@@ -99,20 +104,98 @@ def nifti_to_jpg(nifti_path, slice_axis=0):
         image_arr[i] = image1_copy[y:y+h,x:x+w]
         plt.subplot(1,3,i+1)
         plt.imshow(image_arr[i]);plt.axis("off")
-        plt.title(nifti_path[40:-1])
-        plt.show()
 
+
+        plt.title(str(count)+nifti_path[-25:-19])
+
+    plt.show()
+    count += 1
     image_arr_RL = []
     for img in image_arr:
         y = int(img.shape[0]/2)
         x = int(img.shape[1]/2)
         image_arr_RL.append(img[0:y,0:x])
-        plt.imshow(img[0:y,0:x])
-        plt.show()
+       # plt.imshow(img[0:y,0:x])
+        #plt.show()
         image_arr_RL.append(img[0:y,x:int(img.shape[1])])
-        plt.imshow(img[0:y,x:int(img.shape[1])])
-        plt.show()
+       # plt.imshow(img[0:y,x:int(img.shape[1])])
+       # plt.show()
 
+    # 6 ROI bolgesi seciliyor ve bir arrayle donduruluyor
+    return image_arr_RL
+
+
+def dicom_to_jpg(dicom_folder):
+
+    global count
+
+    max = 0
+    index = 0
+    img_array = []
+    dicom_files = [f for f in os.listdir(dicom_folder) if f.endswith('.dcm')]
+
+    for i, dicom_file in enumerate(dicom_files):
+        dicom_path = os.path.join(dicom_folder, dicom_file)
+        ds = pydicom.dcmread(dicom_path)
+        image_data = ds.pixel_array
+        img_array.append(image_data)
+        #output_path = os.path.join(output_folder, f"{dicom_file[:-4]}_slice_{i}.png")
+        #plt.imsave(output_path, image_data , cmap='gray')
+        image = image_data.copy()
+
+        # Dilimi ikili görüntüye dönüştürme
+        image[image > 10] = 255
+        image[image <= 10] = 0
+
+        # Morfolojik işlem uygulama
+        kernel = np.ones((5,5),np.uint8)
+        eroded_mask = cv2.dilate(image,kernel,iterations = 1)
+        eroded_area = np.sum(eroded_mask)
+
+        #alansal olarak en buyuk beyin goruntusunu aliyor
+        if i > 10 and eroded_area > max:
+            max = eroded_area
+            index = i
+
+    img_array = np.array(img_array)
+    image_arr = []
+    #dongude, bulunan en buyuk 3 goruntunun 10 aralıkla array e kaydediliyor
+    #  
+    for i in range(1,4):
+        img = img_array[int(int(index) + int(int(i)*10)), :, :]
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = (img * 255).astype(np.uint8)
+        image_arr.append(img)
+    
+    for i in range(3):
+        image1_copy = image_arr[i].copy()
+        image_gray = cv2.cvtColor(image1_copy,cv2.COLOR_BGR2GRAY)
+        image_gray[image_gray > 10] = 255
+        image_gray[image_gray <= 10] = 0
+        # goruntuyu kirpmak icin en buyuk contour bulunuyor
+        contours, hierarchy = cv2.findContours(image_gray, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+        sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)
+        #  bounding rectangle cizililiyor 
+        x, y, w, h = cv2.boundingRect(sorted_contours[0])
+        image_arr[i] = image1_copy[y:y+h,x:x+w]
+        plt.subplot(1,3,i+1)
+        plt.imshow(image_arr[i]);plt.axis("off")
+
+        plt.title(str(count)+dicom_folder[:])
+    
+    plt.show()
+    count += 1
+    image_arr_RL = []
+    for img in image_arr:
+        y = int(img.shape[0]/2)
+        x = int(img.shape[1]/2)
+        image_arr_RL.append(img[0:y,0:x])
+       # plt.imshow(img[0:y,0:x])
+        #plt.show()
+        image_arr_RL.append(img[0:y,x:int(img.shape[1])])
+       # plt.imshow(img[0:y,x:int(img.shape[1])])
+       # plt.show()
+    
     # 6 ROI bolgesi seciliyor ve bir arrayle donduruluyor
     return image_arr_RL
 
@@ -245,7 +328,9 @@ def HOG(image):
 
             
 if __name__ == "__main__":
-    data_path = os.listdir(r'\dataset')
+
+
+    data_path = os.listdir(r'dataset')
     features = []
     data = {}
     with open(r'features.txt', 'r') as file:
@@ -257,8 +342,15 @@ if __name__ == "__main__":
                 data[f'{feature}{i}'] = []
 
 # Veri setini dolaşarak özellikleri çıkartın
+# Dicom formatli veriler kullanilacaksa dicom_to_jpg aktif edilmeli
+
     for index, path in enumerate(data_path):
         image_arr = nifti_to_jpg(rf'dataset\{path}')
+
+    #directory_path = "sasasa"
+    #subdirectories = [f for f in os.listdir(directory_path) if os.path.isdir(os.path.join(directory_path, f))]
+    #for index, path in enumerate(subdirectories):
+        #image_arr = dicom_to_jpg(rf'{directory_path}\{path}')
 
         for i, img in enumerate(image_arr):
             pixel_density_, pixel_density_value_ = number_of_densest_pixels(img)
